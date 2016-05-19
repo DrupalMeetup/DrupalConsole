@@ -7,8 +7,9 @@
 
 namespace Drupal\Console\Command\Config;
 
-use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Dumper;
+use \Symfony\Component\Yaml\Yaml;
+use Drupal\Console\Style\DrupalStyle;
 
 /**
  * Class ConfigExportTrait
@@ -34,19 +35,14 @@ trait ExportTrait
     }
 
     /**
-     * @param $module
-     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     * @param string      $module
+     * @param DrupalStyle $io
      */
-    protected function exportConfig($module, OutputInterface $output, $message)
+    protected function exportConfig($module, DrupalStyle $io, $message)
     {
         $dumper = new Dumper();
 
-        $output->writeln(
-            sprintf(
-                '[+] <info>%s</info>',
-                $message
-            )
-        );
+        $io->info($message);
 
         foreach ($this->configExport as $fileName => $config) {
             $yamlConfig = $dumper->dump($config['data'], 10);
@@ -63,18 +59,7 @@ trait ExportTrait
                 $fileName
             );
 
-            $output->writeln(
-                sprintf(
-                    '- <info>%s</info>',
-                    $configFile
-                )
-            );
-
-            $configDirectory = sprintf(
-                '%s/%s',
-                $this->getKernelHelper()->getSitePath(),
-                $configDirectory
-            );
+            $io->info('- ' . $configFile);
 
             // Create directory if doesn't exist
             if (!file_exists($configDirectory)) {
@@ -82,11 +67,7 @@ trait ExportTrait
             }
 
             file_put_contents(
-                sprintf(
-                    '%s/%s',
-                    $this->getKernelHelper()->getSitePath(),
-                    $configFile
-                ),
+                $configFile,
                 $yamlConfig
             );
         }
@@ -113,9 +94,9 @@ trait ExportTrait
         }
     }
 
-    protected function exportModuleDependencies($output, $module, $dependencies)
+    protected function exportModuleDependencies($io, $module, $dependencies)
     {
-        $yaml = new \Symfony\Component\Yaml\Yaml();
+        $yaml = new Yaml();
         $info_file = file_get_contents($this->getSite()->getModuleInfoFile($module));
         $info_yaml = $yaml->parse($info_file);
 
@@ -126,25 +107,22 @@ trait ExportTrait
         }
 
         if (file_put_contents($this->getSite()->getModuleInfoFile($module), $yaml->dump($info_yaml))) {
-            $output->writeln(
-                '<info>[+] ' .
+            $io->info(
+                '[+] ' .
                 sprintf(
                     $this->trans('commands.config.export.view.messages.depencies-included'),
                     $this->getSite()->getModuleInfoFile($module)
-                ) . '</info>'
+                )
             );
 
             foreach ($dependencies as $dependency) {
-                $output->writeln(
-                    '<info>    [-] ' . $dependency . '</info>'
+                $io->info(
+                    '   [-] ' . $dependency
                 );
             }
-
-            $output->writeln('');
         } else {
-            $output->writeln(
-                ' <error>'. $this->trans('commands.site.mode.messages.error-writing-file') . ': ' . $this->getSite()->getModuleInfoFile($module) .'</error>'
-            );
+            $io->error($this->trans('commands.site.mode.messages.error-writing-file') . ': ' . $this->getSite()->getModuleInfoFile($module));
+
             return [];
         }
     }

@@ -16,9 +16,10 @@ class EntityConfigGenerator extends Generator
      * @param string $entity_name  Entity machine name
      * @param string $entity_class Entity class name
      * @param string $label        Entity label
+     * @param string $base_path    Base path
      * @param string $bundle_of    Entity machine name of the content entity this config entity acts as a bundle for.
      */
-    public function generate($module, $entity_name, $entity_class, $label, $bundle_of = null)
+    public function generate($module, $entity_name, $entity_class, $label, $base_path, $bundle_of = null)
     {
         $parameters = [
           'module' => $module,
@@ -26,19 +27,13 @@ class EntityConfigGenerator extends Generator
           'entity_class' => $entity_class,
           'label' => $label,
           'bundle_of' => $bundle_of,
+          'base_path' => $base_path,
         ];
 
         $this->renderFile(
             'module/config/schema/entity.schema.yml.twig',
             $this->getSite()->getModulePath($module).'/config/schema/'.$entity_name.'.schema.yml',
             $parameters
-        );
-
-        $this->renderFile(
-            'module/routing-entity.yml.twig',
-            $this->getSite()->getModulePath($module).'/'.$module.'.routing.yml',
-            $parameters,
-            FILE_APPEND
         );
 
         $this->renderFile(
@@ -64,6 +59,12 @@ class EntityConfigGenerator extends Generator
         $this->renderFile(
             'module/src/Entity/entity.php.twig',
             $this->getSite()->getEntityPath($module).'/'.$entity_class.'.php',
+            $parameters
+        );
+
+        $this->renderFile(
+            'module/src/entity-route-provider.php.twig',
+            $this->getSite()->getSourcePath($module).'/'.$entity_class.'HtmlRouteProvider.php',
             $parameters
         );
 

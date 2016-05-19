@@ -9,21 +9,51 @@ namespace Drupal\Console\Command\Module;
 
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Drupal\Console\Command\ContainerAwareCommand;
+use Drupal\Console\Style\DrupalStyle;
 
 class UninstallCommand extends ContainerAwareCommand
 {
+    /**
+     * {@inheritdoc}
+     */
     protected function configure()
     {
         $this
             ->setName('module:uninstall')
             ->setDescription($this->trans('commands.module.uninstall.description'))
-            ->addArgument('module', InputArgument::REQUIRED, $this->trans('commands.module.uninstall.options.module'));
+            ->addArgument('module', InputArgument::REQUIRED, $this->trans('commands.module.uninstall.questions.module'))
+            ->addOption('force', '', InputOption::VALUE_NONE, $this->trans('commands.module.uninstall.options.force'));
     }
+    /**
+     * {@inheritdoc}
+     */
+    protected function interact(InputInterface $input, OutputInterface $output)
+    {
+        $io = new DrupalStyle($input, $output);
+        $module = $input->getArgument('module');
+        $modules = $this->getSite()->getModules(true, true, false, true, true, true);
 
+        if (!$module) {
+            $module = $io->choiceNoList(
+                $this->trans('commands.module.uninstall.questions.module'),
+                $modules,
+                true
+            );
+            $input->setArgument('module', $module);
+        }
+    }
+    /**
+     * {@inheritdoc}
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $io =  new DrupalStyle($input, $output);
+
+        $this->getDrupalHelper()->loadLegacyFile('/core/modules/system/system.module');
+
         $extension_config = $this->getConfigFactory()->getEditable('core.extension');
 
         $moduleInstaller = $this->getModuleInstaller();
@@ -39,12 +69,12 @@ class UninstallCommand extends ContainerAwareCommand
 
         // Determine if some module request is missing
         if ($missing_modules = array_diff_key($module_list, $module_data)) {
-            $output->writeln(
-                '[+] <error>'.sprintf(
+            $io->error(
+                sprintf(
                     $this->trans('commands.module.uninstall.messages.missing'),
                     implode(', ', $modules),
                     implode(', ', $missing_modules)
-                ).'</error>'
+                )
             );
 
             return true;
@@ -53,52 +83,55 @@ class UninstallCommand extends ContainerAwareCommand
         // Only process currently installed modules.
         $installed_modules = $extension_config->get('module') ?: array();
         if (!$module_list = array_intersect_key($module_list, $installed_modules)) {
-            $output->writeln('[+] <info>'.$this->trans('commands.module.uninstall.messages.nothing').'</info>');
+            $io->info($this->trans('commands.module.uninstall.messages.nothing'));
 
             return true;
         }
 
-        // Calculate $dependents
-        $dependents = array();
-        while (list($module) = each($module_list)) {
-            foreach (array_keys($module_data[$module]->required_by) as $dependent) {
-                // Skip already uninstalled modules.
-                if (isset($installed_modules[$dependent]) && !isset($module_list[$dependent]) && $dependent != $profile) {
-                    $dependents[] = $dependent;
+        $force = $input->getOption('force');
+
+        if (!$force) {
+            // Calculate $dependents
+            $dependents = array();
+            while (list($module) = each($module_list)) {
+                foreach (array_keys($module_data[$module]->required_by) as $dependent) {
+                    // Skip already uninstalled modules.
+                    if (isset($installed_modules[$dependent]) && !isset($module_list[$dependent]) && $dependent != $profile) {
+                        $dependents[] = $dependent;
+                    }
                 }
             }
-        }
 
-        // Error if there are missing dependencies
-        if (!empty($dependents)) {
-            $output->writeln(
-                '[+] <error>'.sprintf(
-                    $this->trans('commands.module.uninstall.messages.dependents'),
-                    implode(', ', $modules),
-                    implode(', ', $dependents)
-                ).'</error>'
-            );
+            // Error if there are missing dependencies
+            if (!empty($dependents)) {
+                $io->error(
+                    sprintf(
+                        $this->trans('commands.module.uninstall.messages.dependents'),
+                        implode(', ', $modules),
+                        implode(', ', $dependents)
+                    )
+                );
 
-            return true;
+                return true;
+            }
         }
 
         // Installing modules
         try {
-            // Install the modules.
+            // Uninstall the modules.
             $moduleInstaller->uninstall($module_list);
 
-            $output->writeln(
-                '[+] <info>'.sprintf(
+            $io->info(
+                sprintf(
                     $this->trans('commands.module.uninstall.messages.success'),
                     implode(', ', $modules)
-                ).'</info>'
+                )
             );
         } catch (\Exception $e) {
-            $output->writeln('[+] <error>'.$e->getMessage().'</error>');
+            $io->error($e->getMessage());
 
             return;
         }
-
         // Run cache rebuild to see changes in Web UI
         $this->getChain()->addCommand('cache:rebuild', ['cache' => 'discovery']);
     }

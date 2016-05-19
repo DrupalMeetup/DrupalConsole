@@ -9,8 +9,8 @@ namespace Drupal\Console\Command\Update;
 
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Helper\Table;
 use Drupal\Console\Command\ContainerAwareCommand;
+use Drupal\Console\Style\DrupalStyle;
 
 class DebugCommand extends ContainerAwareCommand
 {
@@ -23,89 +23,97 @@ class DebugCommand extends ContainerAwareCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $table = new Table($output);
-        $table->setStyle('compact');
+        $io = new DrupalStyle($input, $output);
 
         $this->getDrupalHelper()->loadLegacyFile('/core/includes/update.inc');
         $this->getDrupalHelper()->loadLegacyFile('/core/includes/install.inc');
+        $updateRegistry = $this->getService('update.post_update_registry');
 
         drupal_load_updates();
         update_fix_compatibility();
 
         $updates = update_get_update_list();
+        $postUpdates = $updateRegistry->getPendingUpdateInformation();
+
         $requirements = update_check_requirements();
         $severity = drupal_requirements_severity($requirements);
 
+        $io->newLine();
+
         if ($severity == REQUIREMENT_ERROR || ($severity == REQUIREMENT_WARNING)) {
-            $output->writeln(
-                '[-] <info>' .
-                $this->trans('commands.update.debug.messages.requirements-error')
-                . '</info>'
-            );
+            $io->info($this->trans('commands.update.debug.messages.requirements-error'));
 
-            $table->setHeaders(
-                [
-                    $this->trans('commands.update.debug.messages.severity'),
-                    $this->trans('commands.update.debug.messages.title'),
-                    $this->trans('commands.update.debug.messages.value'),
-                    $this->trans('commands.update.debug.messages.description')
-                ]
-            );
+            $tableHeader = [
+                $this->trans('commands.update.debug.messages.severity'),
+                $this->trans('commands.update.debug.messages.title'),
+                $this->trans('commands.update.debug.messages.value'),
+                $this->trans('commands.update.debug.messages.description'),
+            ];
 
+            $tableRows = [];
             foreach ($requirements as $requirement) {
                 if (isset($requirement['minimum schema']) & in_array($requirement['minimum schema'], array(REQUIREMENT_ERROR, REQUIREMENT_WARNING))) {
-                    $table->addRow(
-                        [
-                                $requirement['severity'],
-                                $requirement['title'],
-                                $requirement['value'],
-                                $requirement['description']
-                            ]
-                    );
+                    $tableRows[] = [
+                        $requirement['severity'],
+                        $requirement['title'],
+                        $requirement['value'],
+                        $requirement['description'],
+                    ];
                 }
             }
 
-            $table->render();
+            $io->table($tableHeader, $tableRows);
+
             return;
         }
 
         if (empty($updates)) {
-            $output->writeln(
-                '[-] <info>' .
-                $this->trans('commands.update.debug.messages.no-updates')
-                . '</info>'
-            );
+            $io->info($this->trans('commands.update.debug.messages.no-updates'));
+
             return;
         }
 
-        $table->setHeaders(
-            [
-                $this->trans('commands.update.debug.messages.module'),
-                $this->trans('commands.update.debug.messages.update-n'),
-                $this->trans('commands.update.debug.messages.description')
-            ]
-        );
+        $tableHeader = [
+            $this->trans('commands.update.debug.messages.module'),
+            $this->trans('commands.update.debug.messages.update-n'),
+            $this->trans('commands.update.debug.messages.description')
+        ];
 
-        $output->writeln(
-            '<info>'.
-            $this->trans('commands.update.debug.messages.module-list')
-            .'</info>'
-        );
+        $io->info($this->trans('commands.update.debug.messages.module-list'));
 
-
+        $tableRows = [];
         foreach ($updates as $module => $module_updates) {
             foreach ($module_updates['pending'] as $update_n => $update) {
                 list(, $description) = explode($update_n . " - ", $update);
-                $table->addRow(
-                    [
-                        $module,
-                        $update_n,
-                        trim($description)
-                    ]
-                );
+                $tableRows[] = [
+                    $module,
+                    $update_n,
+                    trim($description),
+                ];
             }
         }
 
-        $table->render();
+        $io->table($tableHeader, $tableRows);
+
+        $tableHeader = [
+          $this->trans('commands.update.debug.messages.module'),
+          $this->trans('commands.update.debug.messages.post-update'),
+          $this->trans('commands.update.debug.messages.description')
+        ];
+
+        $io->info($this->trans('commands.update.debug.messages.module-list-post-update'));
+
+        $tableRows = [];
+        foreach ($postUpdates as $module => $module_updates) {
+            foreach ($module_updates['pending'] as $postUpdateFunction => $message) {
+                $tableRows[] = [
+                  $module,
+                  $postUpdateFunction,
+                  $message,
+                ];
+            }
+        }
+
+        $io->table($tableHeader, $tableRows);
     }
 }

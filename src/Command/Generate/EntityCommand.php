@@ -72,6 +72,12 @@ abstract class EntityCommand extends GeneratorCommand
                 $this->trans('commands.'.$commandKey.'.options.entity-name')
             )
             ->addOption(
+                'base-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                $this->trans('commands.' . $commandKey . '.options.base-path')
+            )
+            ->addOption(
                 'label',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -89,7 +95,7 @@ abstract class EntityCommand extends GeneratorCommand
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         $commandKey = str_replace(':', '.', $this->commandName);
         $utils = $this->getStringHelper();
@@ -98,14 +104,14 @@ abstract class EntityCommand extends GeneratorCommand
         $module = $input->getOption('module');
         if (!$module) {
             // @see Drupal\Console\Command\ModuleTrait::moduleQuestion
-            $module = $this->moduleQuestion($output);
+            $module = $this->moduleQuestion($io);
             $input->setOption('module', $module);
         }
 
         // --entity-class option
         $entityClass = $input->getOption('entity-class');
         if (!$entityClass) {
-            $entityClass = $output->ask(
+            $entityClass = $io->ask(
                 $this->trans('commands.'.$commandKey.'.questions.entity-class'),
                 'DefaultEntity',
                 function ($entityClass) {
@@ -119,7 +125,7 @@ abstract class EntityCommand extends GeneratorCommand
         // --entity-name option
         $entityName = $input->getOption('entity-name');
         if (!$entityName) {
-            $entityName = $output->ask(
+            $entityName = $io->ask(
                 $this->trans('commands.'.$commandKey.'.questions.entity-name'),
                 $utils->camelCaseToMachineName($entityClass),
                 function ($entityName) {
@@ -132,15 +138,41 @@ abstract class EntityCommand extends GeneratorCommand
         // --label option
         $label = $input->getOption('label');
         if (!$label) {
-            $label = $output->ask(
+            $label = $io->ask(
                 $this->trans('commands.'.$commandKey.'.questions.label'),
                 $utils->camelCaseToHuman($entityClass)
             );
             $input->setOption('label', $label);
         }
+
+        // --base-path option
+        $base_path = $input->getOption('base-path');
+        if (!$base_path) {
+            $base_path = $this->getDefaultBasePath();
+        }
+        $base_path = $io->ask(
+            $this->trans('commands.'.$commandKey.'.questions.base-path'),
+            $base_path
+        );
+        if (substr($base_path, 0, 1) !== '/') {
+            // Base path must start with a leading '/'.
+            $base_path = '/' . $base_path;
+        }
+        $input->setOption('base-path', $base_path);
     }
 
     protected function createGenerator()
     {
+    }
+
+    /**
+     * Gets default base path.
+     *
+     * @return string
+     *   Default base path.
+     */
+    protected function getDefaultBasePath()
+    {
+        return '/admin/structure';
     }
 }

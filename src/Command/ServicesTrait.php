@@ -12,29 +12,30 @@ use Drupal\Console\Style\DrupalStyle;
 trait ServicesTrait
 {
     /**
-     * @param DrupalStyle $output
+     * @param DrupalStyle $io
      *
      * @return mixed
      */
-    public function servicesQuestion(DrupalStyle $output)
+    public function servicesQuestion(DrupalStyle $io)
     {
-        if ($output->confirm(
+        if ($io->confirm(
             $this->trans('commands.common.questions.services.confirm'),
             false
         )) {
             $service_collection = [];
-            $output->writeln($this->trans('commands.common.questions.services.message'));
+            $io->writeln($this->trans('commands.common.questions.services.message'));
 
             $services = $this->getServices();
-            $services[] = ' ';
             while (true) {
-                $service = $output->choiceNoList(
+                $service = $io->choiceNoList(
                     $this->trans('commands.common.questions.services.name'),
                     $services,
-                    ' '
+                    null,
+                    true
                 );
 
-                if (empty(trim($service))) {
+                $service = trim($service);
+                if (empty($service)) {
                     break;
                 }
 
@@ -51,9 +52,9 @@ trait ServicesTrait
     }
 
     /**
-     * @param Array $services
+     * @param array $services
      *
-     * @return Array
+     * @return array
      */
     public function buildServices($services)
     {

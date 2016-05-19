@@ -10,10 +10,21 @@ namespace Drupal\Console\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Command\Command as BaseCommand;
+use Drupal\Console\Command\Shared\ContainerAwareCommandTrait;
 use Drupal\Console\Style\DrupalStyle;
 
-class CacheRebuildCommand extends ContainerAwareCommand
+/**
+ * Class CacheRebuildCommand
+ * @package Drupal\Console\Command
+ */
+class CacheRebuildCommand extends BaseCommand
 {
+    use ContainerAwareCommandTrait;
+
+    /**
+     * {@inheritdoc}
+     */
     protected function configure()
     {
         $this
@@ -26,39 +37,36 @@ class CacheRebuildCommand extends ContainerAwareCommand
             );
     }
 
+    /**
+     * {@inheritdoc}
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
-
-        $this->getDrupalHelper()->loadLegacyFile('/core/includes/utility.inc');
-
-        $validators = $this->getValidator();
+        $io = new DrupalStyle($input, $output);
+        $this->get('site')->loadLegacyFile('/core/includes/utility.inc');
+        $validators = $this->getApplication()->getValidator();
 
         // Get the --cache option and make validation
         $cache = $input->getArgument('cache');
 
         $validated_cache = $validators->validateCache($cache);
         if (!$validated_cache) {
-            $output->error(
+            $io->error(
                 sprintf(
                     $this->trans('commands.cache.rebuild.messages.invalid_cache'),
                     $cache
                 )
             );
+
             return;
         }
 
         // Start rebuilding cache
-        $output->newLine();
-        $output->writeln(
-            sprintf(
-                '<comment>%s</comment>',
-                $this->trans('commands.cache.rebuild.messages.rebuild')
-            )
-        );
+        $io->newLine();
+        $io->comment($this->trans('commands.cache.rebuild.messages.rebuild'));
 
         // Get data needed to rebuild cache
-        $kernelHelper = $this->getKernelHelper();
+        $kernelHelper = $this->getApplication()->getKernelHelper();
         $classLoader = $kernelHelper->getClassLoader();
         $request = $kernelHelper->getRequest();
 
@@ -72,28 +80,29 @@ class CacheRebuildCommand extends ContainerAwareCommand
             $caches[$cache]->deleteAll();
         }
 
-        $output->success($this->trans('commands.cache.rebuild.messages.completed'));
+        $io->success($this->trans('commands.cache.rebuild.messages.completed'));
     }
 
+    /**
+     * {@inheritdoc}
+     */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
-
-        $validators = $this->getValidator();
+        $io = new DrupalStyle($input, $output);
 
         $cache = $input->getArgument('cache');
         if (!$cache) {
+            $validators = $this->getApplication()->getValidator();
             $caches = $validators->getCaches();
             $cache_keys = array_keys($caches);
-            $cache_keys[] = 'all';
 
-            $cache = $output->choiceNoList(
+            $cache = $io->choiceNoList(
                 $this->trans('commands.cache.rebuild.questions.cache'),
                 $cache_keys,
-                'all',
-                true
+                'all'
             );
+
+            $input->setArgument('cache', $cache);
         }
-        $input->setArgument('cache', $cache);
     }
 }

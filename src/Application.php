@@ -3,12 +3,14 @@
 namespace Drupal\Console;
 
 use Symfony\Component\Console\Application as BaseApplication;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Debug\Debug;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Drupal\Console\Helper\HelperTrait;
 use Drupal\Console\Style\DrupalStyle;
 
@@ -24,27 +26,28 @@ class Application extends BaseApplication
      * @var string
      */
     const NAME = 'Drupal Console';
+
     /**
      * @var string
      */
-    const VERSION = '0.9.9';
+    const VERSION = '1.0.0-alpha2';
+
     /**
      * @var string
      */
-    const DRUPAL_VERSION = '8.0.1';
-    /**
-     * @var \Drupal\Console\Config
-     */
-    protected $config;
+    const DRUPAL_SUPPORTED_VERSION = '8.1.x';
+
     /**
      * @var string
      */
     protected $directoryRoot;
+
     /**
      * @var string
      * The Drupal environment.
      */
     protected $env;
+
     /**
      * @var \Drupal\Console\Helper\TranslatorHelper
      */
@@ -56,46 +59,71 @@ class Application extends BaseApplication
     protected $commandName;
 
     /**
+     * @var string
+     */
+    protected $errorMessage;
+
+    /**
+     * @var ContainerBuilder
+     */
+    protected $container;
+
+    /**
      * Create a new application.
      *
-     * @param $config
-     * @param $translator
+     * @param $container
      */
-    public function __construct($config, $translator)
+    public function __construct($container)
     {
-        $this->config = $config;
-        $this->translator = $translator;
-        $this->env = $config->get('application.environment');
-
+        $this->container = $container;
         parent::__construct($this::NAME, $this::VERSION);
 
+        //        $this->env = $this->getConfig()->get('application.environment');
+        $this->env = $this->getConfig()->get('application.environment');
         $this->getDefinition()->addOption(
-            new InputOption('--root', null, InputOption::VALUE_OPTIONAL, $this->trans('application.console.arguments.root'))
+            new InputOption('--env', '-e', InputOption::VALUE_OPTIONAL, $this->trans('application.options.env'), $this->env)
         );
         $this->getDefinition()->addOption(
-            new InputOption('--env', '-e', InputOption::VALUE_OPTIONAL, $this->trans('application.console.arguments.env'), $this->env)
+            new InputOption('--root', null, InputOption::VALUE_OPTIONAL, $this->trans('application.options.root'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--no-debug', null, InputOption::VALUE_NONE, $this->trans('application.console.arguments.no-debug'))
+            new InputOption('--no-debug', null, InputOption::VALUE_NONE, $this->trans('application.options.no-debug'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--learning', null, InputOption::VALUE_NONE, $this->trans('application.console.arguments.learning'))
+            new InputOption('--learning', null, InputOption::VALUE_NONE, $this->trans('application.options.learning'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--generate-chain', '--gc', InputOption::VALUE_NONE, $this->trans('application.console.arguments.generate-chain'))
+            new InputOption('--generate-chain', '-c', InputOption::VALUE_NONE, $this->trans('application.options.generate-chain'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--generate-inline', '--gi', InputOption::VALUE_NONE, $this->trans('application.console.arguments.generate-inline'))
+            new InputOption('--generate-inline', '-i', InputOption::VALUE_NONE, $this->trans('application.options.generate-inline'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--generate-doc', '--gd', InputOption::VALUE_NONE, $this->trans('application.console.arguments.generate-doc'))
+            new InputOption('--generate-doc', '-d', InputOption::VALUE_NONE, $this->trans('application.options.generate-doc'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--target', '--t', InputOption::VALUE_OPTIONAL, $this->trans('application.console.arguments.target'))
+            new InputOption('--target', '-t', InputOption::VALUE_OPTIONAL, $this->trans('application.options.target'))
         );
         $this->getDefinition()->addOption(
-            new InputOption('--uri', '-l', InputOption::VALUE_REQUIRED, $this->trans('application.console.arguments.uri'))
+            new InputOption('--uri', '-l', InputOption::VALUE_REQUIRED, $this->trans('application.options.uri'))
         );
+        $this->getDefinition()->addOption(
+            new InputOption('--yes', '-y', InputOption::VALUE_NONE, $this->trans('application.options.yes'))
+        );
+
+        $options = $this->getConfig()->get('application.default.global.options')?:[];
+        foreach ($options as $key => $option) {
+            if ($this->getDefinition()->hasOption($key)) {
+                $_SERVER['argv'][] = sprintf('--%s', $key);
+            }
+        }
+
+        if (count($_SERVER['argv'])>1 && stripos($_SERVER['argv'][1], '@')===0) {
+            $_SERVER['argv'][1] = sprintf(
+                '--target=%s',
+                substr($_SERVER['argv'][1], 1)
+            );
+        }
     }
 
     /**
@@ -106,16 +134,16 @@ class Application extends BaseApplication
     protected function getDefaultInputDefinition()
     {
         return new InputDefinition(
-            array(
-            new InputArgument('command', InputArgument::REQUIRED, $this->trans('application.console.input.definition.command')),
-            new InputOption('--help', '-h', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.help')),
-            new InputOption('--quiet', '-q', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.quiet')),
-            new InputOption('--verbose', '-v|vv|vvv', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.verbose')),
-            new InputOption('--version', '-V', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.version')),
-            new InputOption('--ansi', '', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.ansi')),
-            new InputOption('--no-ansi', '', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.no-ansi')),
-            new InputOption('--no-interaction', '-n', InputOption::VALUE_NONE, $this->trans('application.console.input.definition.no-interaction')),
-            )
+            [
+                new InputArgument('command', InputArgument::REQUIRED, $this->trans('application.arguments.command')),
+                new InputOption('--help', '-h', InputOption::VALUE_NONE, $this->trans('application.options.help')),
+                new InputOption('--quiet', '-q', InputOption::VALUE_NONE, $this->trans('application.options.quiet')),
+                new InputOption('--verbose', '-v|vv|vvv', InputOption::VALUE_NONE, $this->trans('application.options.verbose')),
+                new InputOption('--version', '-V', InputOption::VALUE_NONE, $this->trans('application.options.version')),
+                new InputOption('--ansi', '', InputOption::VALUE_NONE, $this->trans('application.options.ansi')),
+                new InputOption('--no-ansi', '', InputOption::VALUE_NONE, $this->trans('application.options.no-ansi')),
+                new InputOption('--no-interaction', '-n', InputOption::VALUE_NONE, $this->trans('application.options.no-interaction')),
+            ]
         );
     }
 
@@ -129,24 +157,25 @@ class Application extends BaseApplication
     public function getLongVersion()
     {
         if ('UNKNOWN' !== $this->getName() && 'UNKNOWN' !== $this->getVersion()) {
-            return sprintf($this->trans('application.console.options.version'), $this->getName(), $this->getVersion());
+            return sprintf($this->trans('application.messages.version'), $this->getName(), $this->getVersion());
         }
 
         return '<info>Drupal Console</info>';
     }
-
     /**
      * {@inheritdoc}
      */
     public function doRun(InputInterface $input, OutputInterface $output)
     {
         $output = new DrupalStyle($input, $output);
+
         $root = null;
+        $commandName = null;
+        $recursive = false;
         $config = $this->getConfig();
         $target = $input->getParameterOption(['--target'], null);
 
-        if ($input) {
-            $commandName = $this->getCommandName($input);
+        if ($input && $commandName = $this->getCommandName($input)) {
             $this->commandName = $commandName;
         }
 
@@ -168,19 +197,29 @@ class Application extends BaseApplication
             return 0;
         }
 
-        if (!$target) {
-            $root = $input->getParameterOption(['--root'], null);
+        if (!$target && $input->hasParameterOption(['--root'])) {
+            $root = $input->getParameterOption(['--root']);
+            $root = (strpos($root, '/')===0)?$root:sprintf('%s/%s', getcwd(), $root);
         }
 
-        $uri = $input->getParameterOption(array('--uri', '-l'));
-        $env = $input->getParameterOption(array('--env', '-e'), getenv('DRUPAL_ENV') ?: 'prod');
+        $uri = $input->getParameterOption(['--uri', '-l']);
 
-        if (!$env) {
+        /*Checking if the URI has http of not in begenning*/
+        if($uri && !preg_match('^(http|https)://', $uri)){
+            $uri = sprintf(
+                'http://%s',
+                $uri
+            );
+        }
+
+        $env = $input->getParameterOption(['--env', '-e'], getenv('DRUPAL_ENV') ?: 'prod');
+
+        if ($env) {
             $this->env = $env;
         }
 
         $debug = getenv('DRUPAL_DEBUG') !== '0'
-          && !$input->hasParameterOption(array('--no-debug', ''))
+          && !$input->hasParameterOption(['--no-debug', ''])
           && $env !== 'prod';
 
         if ($debug) {
@@ -189,19 +228,19 @@ class Application extends BaseApplication
 
         $drupal = $this->getDrupalHelper();
         $this->getCommandDiscoveryHelper()->setApplicationRoot($this->getDirectoryRoot());
-        $recursive = false;
 
         if (!$root) {
             $root = getcwd();
             $recursive = true;
         }
 
+        /* validate drupal site */
+        $this->container->get('site')->isValidRoot($root, $recursive);
+
         if (!$drupal->isValidRoot($root, $recursive)) {
             $commands = $this->getCommandDiscoveryHelper()->getConsoleCommands();
-            if (!$commandName) {
-                $this->getMessageHelper()->addWarningMessage(
-                    $this->trans('application.site.errors.directory')
-                );
+            if ($commandName == 'list') {
+                $this->errorMessage = $this->trans('application.site.errors.directory');
             }
             $this->registerCommands($commands);
         } else {
@@ -209,39 +248,79 @@ class Application extends BaseApplication
             $this->getKernelHelper()->setDebug($debug);
             $this->getKernelHelper()->setEnvironment($this->env);
 
-            $this->prepare($drupal);
+            $this->prepare($drupal, $commandName);
         }
 
-        if (true === $input->hasParameterOption(array('--generate-doc', '--gd'))) {
+        if ($commandName && $this->has($commandName)) {
             $command = $this->get($commandName);
-            $command->addOption(
-                'generate-doc',
-                '--gd',
-                InputOption::VALUE_NONE, $this->trans('application.console.arguments.generate-doc')
-            );
+            $parameterOptions = $this->getDefinition()->getOptions();
+            foreach ($parameterOptions as $optionName => $parameterOption) {
+                $parameterOption = [
+                    sprintf('--%s', $parameterOption->getName()),
+                    sprintf('-%s', $parameterOption->getShortcut())
+                ];
+                if (true === $input->hasParameterOption($parameterOption)) {
+                    $option = $this->getDefinition()->getOption($optionName);
+                    $command->getDefinition()->addOption($option);
+                }
+            }
+        }
+
+        $skipCheck = [
+          'check',
+          'init',
+        ];
+        if (!in_array($commandName, $skipCheck) && $config->get('application.checked') != 'true') {
+            $requirementChecker = $this->getContainerHelper()->get('requirement_checker');
+            $phpCheckFile = $this->getConfig()->getUserHomeDir().'/.console/phpcheck.yml';
+            if (!file_exists($phpCheckFile)) {
+                $phpCheckFile = $this->getDirectoryRoot().'config/dist/phpcheck.yml';
+            }
+            $requirementChecker->validate($phpCheckFile);
+            if (!$requirementChecker->isValid()) {
+                $command = $this->find('check');
+                return $this->doRunCommand($command, $input, $output);
+            }
+            if ($requirementChecker->isOverwritten()) {
+                $this->getChain()->addCommand('check');
+            } else {
+                $this->getChain()->addCommand(
+                    'settings:set',
+                    [
+                        'setting-name' => 'checked',
+                        'setting-value' => 'true',
+                        '--quiet'
+                    ]
+                );
+            }
         }
 
         return parent::doRun($input, $output);
     }
 
-    public function prepare($drupal)
+    /**
+     * Prepare drupal.
+     *
+     * @param $drupal
+     * @param $commandName
+     */
+    public function prepare($drupal, $commandName = null)
     {
-        chdir($drupal->getRoot());
-        $this->getSite()->setSiteRoot($drupal->getRoot());
-
         if ($drupal->isValidInstance()) {
+            chdir($drupal->getRoot());
+            $this->getSite()->setSiteRoot($drupal->getRoot());
             $this->bootDrupal($drupal);
         }
 
         if ($drupal->isInstalled()) {
-            $disabledModules = $this->config->get('application.disable.modules');
+            $disabledModules = $this->getConfig()->get('application.disable.modules');
             $this->getCommandDiscoveryHelper()->setDisabledModules($disabledModules);
             $commands = $this->getCommandDiscoveryHelper()->getCommands();
         } else {
             $commands = $this->getCommandDiscoveryHelper()->getConsoleCommands();
-            if (!$commandName) {
-                $this->getMessageHelper()->addWarningMessage(
-                    $this->trans('application.site.errors.settings')
+            if ($commandName == 'list') {
+                $this->errorMessage = $this->trans(
+                    'application.site.errors.settings'
                 );
             }
         }
@@ -259,11 +338,7 @@ class Application extends BaseApplication
         }
 
         foreach ($commands as $command) {
-            $aliases = $this->getCommandAliases($command);
-            if ($aliases) {
-                $command->setAliases($aliases);
-            }
-
+            $command->setAliases([]);
             $this->add($command);
         }
 
@@ -293,20 +368,190 @@ class Application extends BaseApplication
             );
             $this->add($command);
         }
+
+        $tags = $this->container->findTaggedServiceIds('console.command');
+        foreach ($tags as $name => $tags) {
+            /* Add interface(s) for commands:
+             * DrupalConsoleCommandInterface &
+             * DrupalConsoleContainerAwareCommandInterface
+             * and use implements for validation
+             */
+            $command = $this->getContainerHelper()->get($name);
+            if (!$this->getDrupalHelper()->isInstalled()) {
+                $traits = class_uses($command);
+                if (in_array('Drupal\\Console\\Command\\Shared\\ContainerAwareCommandTrait', $traits)) {
+                    continue;
+                }
+            }
+
+            if (method_exists($command, 'setTranslator')) {
+                $command->setTranslator($this->container->get('translator'));
+            }
+            $this->add($command);
+        }
+    }
+
+    public function getData()
+    {
+        $singleCommands = [
+            'about',
+            'chain',
+            'check',
+            'help',
+            'init',
+            'list',
+            'self-update',
+            'server'
+        ];
+        $languages = $this->getConfig()->get('application.languages');
+
+        $data = [];
+        foreach ($singleCommands as $singleCommand) {
+            $data['commands']['none'][] = $this->commandData($singleCommand);
+        }
+
+        $namespaces = array_filter(
+            $this->getNamespaces(), function ($item) {
+                return (strpos($item, ':')<=0);
+            }
+        );
+        sort($namespaces);
+        array_unshift($namespaces, 'none');
+
+        foreach ($namespaces as $namespace) {
+            $commands = $this->all($namespace);
+            usort(
+                $commands, function ($cmd1, $cmd2) {
+                    return strcmp($cmd1->getName(), $cmd2->getName());
+                }
+            );
+            foreach ($commands as $command) {
+                if ($command->getModule()=='Console') {
+                    $data['commands'][$namespace][] = $this->commandData($command->getName());
+                }
+            }
+        }
+
+        $input = $this->getDefinition();
+        $options = [];
+        foreach ($input->getOptions() as $option) {
+            $options[] = [
+                'name' => $option->getName(),
+                'description' => $this->trans('application.options.'.$option->getName())
+            ];
+        }
+        $arguments = [];
+        foreach ($input->getArguments() as $argument) {
+            $arguments[] = [
+                'name' => $argument->getName(),
+                'description' => $this->trans('application.arguments.'.$argument->getName())
+            ];
+        }
+
+        $data['application'] = [
+            'namespaces' => $namespaces,
+            'options' => $options,
+            'arguments' => $arguments,
+            'languages' => $languages,
+            'messages' => [
+                'title' =>  $this->trans('commands.generate.doc.gitbook.messages.title'),
+                'note' =>  $this->trans('commands.generate.doc.gitbook.messages.note'),
+                'note_description' =>  $this->trans('commands.generate.doc.gitbook.messages.note-description'),
+                'command' =>  $this->trans('commands.generate.doc.gitbook.messages.command'),
+                'options' => $this->trans('commands.generate.doc.gitbook.messages.options'),
+                'option' => $this->trans('commands.generate.doc.gitbook.messages.option'),
+                'details' => $this->trans('commands.generate.doc.gitbook.messages.details'),
+                'arguments' => $this->trans('commands.generate.doc.gitbook.messages.arguments'),
+                'argument' => $this->trans('commands.generate.doc.gitbook.messages.argument'),
+                'examples' => $this->trans('commands.generate.doc.gitbook.messages.examples')
+            ],
+            'examples' => []
+        ];
+
+        return $data;
+    }
+
+    private function commandData($commandName)
+    {
+        $command = $this->find($commandName);
+
+        $input = $command->getDefinition();
+        $options = [];
+        foreach ($input->getOptions() as $option) {
+            $options[$option->getName()] = [
+                'name' => $option->getName(),
+                'description' => $option->getDescription(),
+            ];
+        }
+
+        $arguments = [];
+        foreach ($input->getArguments() as $argument) {
+            $arguments[$argument->getName()] = [
+                'name' => $argument->getName(),
+                'description' => $argument->getDescription(),
+            ];
+        }
+
+        $commandKey = str_replace(':', '.', $command->getName());
+
+        $examples = [];
+        for ($i = 0; $i < 5; $i++) {
+            $description = sprintf(
+                'commands.%s.examples.%s.description',
+                $commandKey,
+                $i
+            );
+            $execution = sprintf(
+                'commands.%s.examples.%s.execution',
+                $commandKey,
+                $i
+            );
+
+            if ($description != $this->trans($description)) {
+                $examples[] = [
+                    'description' => $this->trans($description),
+                    'execution' => $this->trans($execution)
+                ];
+            } else {
+                break;
+            }
+        }
+
+        $data = [
+            'name' => $command->getName(),
+            'description' => $command->getDescription(),
+            'options' => $options,
+            'arguments' => $arguments,
+            'examples' => $examples,
+            'aliases' => $command->getAliases(),
+            'key' => $commandKey,
+            'dashed' => str_replace(':', '-', $command->getName()),
+            'messages' => [
+                'usage' =>  $this->trans('commands.generate.doc.gitbook.messages.usage'),
+                'options' => $this->trans('commands.generate.doc.gitbook.messages.options'),
+                'option' => $this->trans('commands.generate.doc.gitbook.messages.option'),
+                'details' => $this->trans('commands.generate.doc.gitbook.messages.details'),
+                'arguments' => $this->trans('commands.generate.doc.gitbook.messages.arguments'),
+                'argument' => $this->trans('commands.generate.doc.gitbook.messages.argument'),
+                'examples' => $this->trans('commands.generate.doc.gitbook.messages.examples')
+            ],
+        ];
+
+        return $data;
     }
 
     /**
      * @param $command
-     * @return array
+     * @return array|null
      */
     private function getCommandAliases($command)
     {
         $aliasKey = sprintf(
-            'application.aliases.commands.%s',
+            'application.default.commands.%s.aliases',
             str_replace(':', '.', $command->getName())
         );
 
-        return $this->config->get($aliasKey);
+        return $this->getConfig()->get($aliasKey);
     }
 
     /**
@@ -315,7 +560,8 @@ class Application extends BaseApplication
     public function bootDrupal($drupal)
     {
         $this->getKernelHelper()->setClassLoader($drupal->getAutoLoadClass());
-        $this->getKernelHelper()->bootKernel();
+        $drupal->setInstalled($this->getKernelHelper()->bootKernel());
+        $this->container->get('site')->setInstalled($this->getKernelHelper()->bootKernel());
     }
 
     /**
@@ -323,15 +569,11 @@ class Application extends BaseApplication
      */
     public function getConfig()
     {
-        return $this->config;
-    }
+        if ($this->container) {
+            return $this->container->get('config');
+        }
 
-    /**
-     * @param mixed $config
-     */
-    public function setConfig($config)
-    {
-        $this->config = $config;
+        return null;
     }
 
     /**
@@ -355,10 +597,19 @@ class Application extends BaseApplication
      */
     public function addHelpers(array $helpers)
     {
-        $defaultHelperSet = $this->getHelperSet();
+        $defaultHelperSet = $this->getHelperSet()?:$this->getDefaultHelperSet();
         foreach ($helpers as $alias => $helper) {
             $defaultHelperSet->set($helper, is_int($alias) ? null : $alias);
         }
+    }
+
+    /**
+     * Remove dispatcher.
+     */
+    public function removeDispatcher()
+    {
+        $dispatcher = new EventDispatcher();
+        $this->setDispatcher($dispatcher);
     }
 
     /**
@@ -368,6 +619,26 @@ class Application extends BaseApplication
      */
     public function trans($key)
     {
-        return $this->translator->trans($key);
+        if ($this->container && $this->container->has('translator')) {
+            return $this->container->get('translator')->trans($key);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return string
+     */
+    public function getErrorMessage()
+    {
+        return $this->errorMessage;
+    }
+
+    /**
+     * @return ContainerBuilder
+     */
+    public function getContainer()
+    {
+        return $this->container;
     }
 }

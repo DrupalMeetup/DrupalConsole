@@ -56,17 +56,18 @@ class CommandCommand extends GeneratorCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
-
-        // @see use Drupal\Console\Command\ConfirmationTrait::confirmGeneration
-        if (!$this->confirmGeneration($output)) {
-            return;
-        }
+        $io = new DrupalStyle($input, $output);
 
         $module = $input->getOption('module');
         $class = $input->getOption('class');
         $name = $input->getOption('name');
         $containerAware = $input->getOption('container-aware');
+        $yes = $input->hasOption('yes')?$input->getOption('yes'):false;
+
+        // @see use Drupal\Console\Command\ConfirmationTrait::confirmGeneration
+        if (!$this->confirmGeneration($io, $yes)) {
+            return;
+        }
 
         $this
             ->getGenerator()
@@ -78,7 +79,7 @@ class CommandCommand extends GeneratorCommand
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         // --module option
         $module = $input->getOption('module');
@@ -91,7 +92,7 @@ class CommandCommand extends GeneratorCommand
         // --name
         $name = $input->getOption('name');
         if (!$name) {
-            $name = $output->ask(
+            $name = $io->ask(
                 $this->trans('commands.generate.command.questions.name'),
                 sprintf('%s:default', $module)
             );
@@ -101,7 +102,7 @@ class CommandCommand extends GeneratorCommand
         // --class option
         $class = $input->getOption('class');
         if (!$class) {
-            $class = $output->ask(
+            $class = $io->ask(
                 $this->trans('commands.generate.command.questions.class'),
                 'DefaultCommand',
                 function ($class) {
@@ -114,12 +115,12 @@ class CommandCommand extends GeneratorCommand
         // --container-aware option
         $containerAware = $input->getOption('container-aware');
         if (!$containerAware) {
-            $output->confirm(
+            $containerAware = $io->confirm(
                 $this->trans('commands.generate.command.questions.container-aware'),
                 true
             );
+            $input->setOption('container-aware', $containerAware);
         }
-        $input->setOption('container-aware', $containerAware);
     }
 
     protected function createGenerator()

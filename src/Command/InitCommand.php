@@ -13,10 +13,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Drupal\Console\Generator\AutocompleteGenerator;
 use Symfony\Component\Process\ProcessBuilder;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Console\Command\Command as BaseCommand;
+use Drupal\Console\Command\Shared\CommandTrait;
 use Drupal\Console\Style\DrupalStyle;
 
-class InitCommand extends Command
+class InitCommand extends BaseCommand
 {
+    use CommandTrait;
+
     /**
      * {@inheritdoc}
      */
@@ -38,11 +42,11 @@ class InitCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         $application = $this->getApplication();
         $config = $application->getConfig();
-        $message = $this->getMessageHelper();
+        $showFileHelper = $application->getShowFileHelper();
         $userPath = sprintf('%s/.console/', $config->getUserHomeDir());
         $copiedFiles = [];
 
@@ -52,8 +56,8 @@ class InitCommand extends Command
         }
 
         $finder = new Finder();
-        $finder->in(sprintf('%s/config/dist', $application->getDirectoryRoot()));
-        $finder->name("*.yml");
+        $finder->in(sprintf('%sconfig/dist/', $application->getDirectoryRoot()));
+        $finder->files();
 
         foreach ($finder as $configFile) {
             $source = sprintf(
@@ -72,12 +76,12 @@ class InitCommand extends Command
         }
 
         if ($copiedFiles) {
-            $message->showCopiedFiles($output, $copiedFiles);
+            $showFileHelper->copiedFiles($io, $copiedFiles);
         }
 
         $this->createAutocomplete();
-        $output->newLine(1);
-        $output->writeln($this->trans('application.console.messages.autocomplete'));
+        $io->newLine(1);
+        $io->writeln($this->trans('application.messages.autocomplete'));
     }
 
     protected function createAutocomplete()
@@ -98,20 +102,6 @@ class InitCommand extends Command
         $process->stop();
 
         $generator->generate($userPath, $executable);
-    }
-
-    protected function getSkeletonDirs()
-    {
-        $module = $this->getModule();
-        if ($module != 'Console') {
-            $drupal = $this->getDrupalHelper();
-            $drupalRoot = $drupal->getRoot();
-            $skeletonDirs[] = $drupalRoot.drupal_get_path('module', $module).'/templates';
-        }
-
-        $skeletonDirs[] = __DIR__.'/../../templates';
-
-        return $skeletonDirs;
     }
 
     /**

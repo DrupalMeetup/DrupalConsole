@@ -18,7 +18,11 @@ trait HelperTrait
      */
     public function getTranslator()
     {
-        return $this->getHelperSet()->get('translator');
+        if ($this->getHelperSet()->has('translator')) {
+            return $this->getHelperSet()->get('translator');
+        }
+
+        return null;
     }
 
     /**
@@ -30,11 +34,12 @@ trait HelperTrait
     }
 
     /**
-     * @return \Drupal\Console\Helper\ChainCommandHelper
+     * return value replaced with service definition.
+     * to be removed once helpers are replaced by services.
      */
     public function getChain()
     {
-        return $this->getHelperSet()->get('chain');
+        return $this->getContainerHelper()->get('chain_queue');
     }
 
     /**
@@ -70,19 +75,11 @@ trait HelperTrait
     }
 
     /**
-     * @return \Drupal\Console\Helper\MessageHelper
+     * @return \Drupal\Console\Helper\ShowFileHelper
      */
-    public function getMessageHelper()
+    public function getShowFileHelper()
     {
-        return $this->getHelperSet()->get('message');
-    }
-
-    /**
-     * @return \Symfony\Component\Console\Helper\QuestionHelper
-     */
-    public function getQuestionHelper()
-    {
-        return $this->getHelperSet()->get('question');
+        return $this->getHelperSet()->get('showFile');
     }
 
     /**
@@ -110,14 +107,6 @@ trait HelperTrait
     }
 
     /**
-     * @return \Symfony\Component\Console\Helper\FormatterHelper
-     */
-    public function getFormatterHelper()
-    {
-        return $this->getHelperSet()->get('formatter');
-    }
-
-    /**
      * @return \Drupal\Console\Helper\RemoteHelper
      */
     public function getRemoteHelper()
@@ -131,5 +120,21 @@ trait HelperTrait
     public function getHttpClientHelper()
     {
         return $this->getHelperSet()->get('httpClient');
+    }
+
+    /**
+     * @return \Drupal\Console\Helper\DrupalApiHelper
+     */
+    public function getDrupalApi()
+    {
+        return $this->getHelperSet()->get('api');
+    }
+
+    /**
+     * @return \Drupal\Console\Helper\ContainerHelper
+     */
+    public function getContainerHelper()
+    {
+        return $this->getHelperSet()->get('container');
     }
 }

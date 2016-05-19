@@ -59,10 +59,10 @@ class PluginFieldWidgetCommand extends GeneratorCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         // @see use Drupal\Console\Command\ConfirmationTrait::confirmGeneration
-        if (!$this->confirmGeneration($output)) {
+        if (!$this->confirmGeneration($io)) {
             return;
         }
 
@@ -81,7 +81,8 @@ class PluginFieldWidgetCommand extends GeneratorCommand
 
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
+        $fieldTypePluginManager = $this->getService('plugin.manager.field.field_type');
 
         // --module option
         $module = $input->getOption('module');
@@ -94,7 +95,7 @@ class PluginFieldWidgetCommand extends GeneratorCommand
         // --class option
         $class_name = $input->getOption('class');
         if (!$class_name) {
-            $class_name = $output->ask(
+            $class_name = $io->ask(
                 $this->trans('commands.generate.plugin.fieldwidget.questions.class'),
                 'ExampleFieldWidget'
             );
@@ -104,7 +105,7 @@ class PluginFieldWidgetCommand extends GeneratorCommand
         // --plugin label option
         $label = $input->getOption('label');
         if (!$label) {
-            $label = $output->ask(
+            $label = $io->ask(
                 $this->trans('commands.generate.plugin.fieldwidget.questions.label'),
                 $this->getStringHelper()->camelCaseToHuman($class_name)
             );
@@ -114,7 +115,7 @@ class PluginFieldWidgetCommand extends GeneratorCommand
         // --plugin-id option
         $plugin_id = $input->getOption('plugin-id');
         if (!$plugin_id) {
-            $plugin_id = $output->ask(
+            $plugin_id = $io->ask(
                 $this->trans('commands.generate.plugin.fieldwidget.questions.plugin-id'),
                 $this->getStringHelper()->camelCaseToUnderscore($class_name)
             );
@@ -124,9 +125,19 @@ class PluginFieldWidgetCommand extends GeneratorCommand
         // --field-type option
         $field_type = $input->getOption('field-type');
         if (!$field_type) {
-            $field_type = $output->ask(
-                $this->trans('commands.generate.plugin.fieldwidget.questions.field-type')
+            // Gather valid field types.
+            $field_type_options = array();
+            foreach ($fieldTypePluginManager->getGroupedDefinitions($fieldTypePluginManager->getUiDefinitions()) as $category => $field_types) {
+                foreach ($field_types as $name => $field_type) {
+                    $field_type_options[] = $name;
+                }
+            }
+
+            $field_type  = $io->choice(
+                $this->trans('commands.generate.plugin.fieldwidget.questions.field-type'),
+                $field_type_options
             );
+
             $input->setOption('field-type', $field_type);
         }
     }

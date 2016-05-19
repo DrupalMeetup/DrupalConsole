@@ -10,8 +10,8 @@ namespace Drupal\Console\Command\Theme;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Helper\Table;
 use Drupal\Console\Command\ContainerAwareCommand;
+use Drupal\Console\Style\DrupalStyle;
 
 class DebugCommand extends ContainerAwareCommand
 {
@@ -25,41 +25,41 @@ class DebugCommand extends ContainerAwareCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $theme = $input->getArgument('theme');
+        $io = new DrupalStyle($input, $output);
 
-        $table = new Table($output);
-        $table->setStyle('compact');
+        $theme = $input->getArgument('theme');
         if ($theme) {
-            $this->getTheme($theme, $output, $table);
+            $this->themeDetail($io, $theme);
         } else {
-            $this->getAllThemes($output, $table);
+            $this->themeList($io);
         }
     }
 
-    protected function getAllThemes($output, $table)
+    protected function themeList(DrupalStyle $io)
     {
-        $table->setHeaders(
-            [
-                $this->trans('commands.theme.debug.messages.theme-id'),
-                $this->trans('commands.theme.debug.messages.theme-name'),
-                $this->trans('commands.theme.debug.messages.status'),
-                $this->trans('commands.theme.debug.messages.version'),
-            ]
-        );
+        $tableHeader = [
+            $this->trans('commands.theme.debug.messages.theme-id'),
+            $this->trans('commands.theme.debug.messages.theme-name'),
+            $this->trans('commands.theme.debug.messages.status'),
+            $this->trans('commands.theme.debug.messages.version'),
+        ];
 
         $themes = $this->getThemeHandler()->rebuildThemeData();
-
+        $tableRows = [];
         foreach ($themes as $themeId => $theme) {
             $status = $this->getThemeStatus($themeId);
-            $table->addRow([$themeId, $theme->info['name'], $status, $theme->info['version']]);
+            $tableRows[] = [
+                $themeId, $theme->info['name'],
+                $status, $theme->info['version'],
+            ];
         }
-        $table->render();
+
+        $io->table($tableHeader, $tableRows);
     }
 
-    protected function getTheme($themeId, $output, $table)
+    protected function themeDetail(DrupalStyle $io, $themeId)
     {
         $theme = null;
-        $message = $this->getMessageHelper();
         $themes = $this->getThemeHandler()->rebuildThemeData();
 
         if (isset($themes[$themeId])) {
@@ -78,34 +78,29 @@ class DebugCommand extends ContainerAwareCommand
             $theme = $themes[$themeId];
             $status = $this->getThemeStatus($themeId);
 
-            $table->setHeaders(
-                [
-                    $this->trans('commands.theme.debug.messages.theme-id'),
-                    $this->trans('commands.theme.debug.messages.theme-properties'),
-                ]
+            $io->info($theme->info['name']);
+
+            $io->comment(
+                sprintf(
+                    '%s : ',
+                    $this->trans('commands.theme.debug.messages.status')
+                ),
+                false
             );
-
-            $table->addRow(['<info>' . $theme->info['name'] . '</info>']);
-            $table->addRow(
-                [
-                    ' <comment>+ ' . $this->trans('commands.theme.debug.messages.status') . '</comment>',
-                    $status,
-                ]
+            $io->writeln($status);
+            $io->comment(
+                sprintf(
+                    '%s : ',
+                    $this->trans('commands.theme.debug.messages.version')
+                ),
+                false
             );
-
-            $table->addRow(
-                [
-                    ' <comment>+ ' . $this->trans('commands.theme.debug.messages.version') . '</comment>',
-                    $theme->info['version'],
-                ]
-            );
-
-            $table->addRow([' <comment>+ ' . $this->trans('commands.theme.debug.messages.regions') . '</comment>']);
-            $table = $this->addThemeAttributes($theme->info['regions'], $table);
-
-            $table->render();
+            $io->writeln($theme->info['version']);
+            $io->comment($this->trans('commands.theme.debug.messages.regions'));
+            $tableRows = $this->addThemeAttributes($theme->info['regions'], $tableRows);
+            $io->table([], $tableRows);
         } else {
-            $message->addErrorMessage(
+            $io->error(
                 sprintf(
                     $this->trans('commands.theme.debug.messages.invalid-theme'),
                     $themeId
@@ -127,16 +122,19 @@ class DebugCommand extends ContainerAwareCommand
         return $status;
     }
 
-    protected function addThemeAttributes($attr, $table)
+    protected function addThemeAttributes($attr, $tableRows = [])
     {
         foreach ($attr as $key => $value) {
             if (is_array($value)) {
-                $table = $this->addThemeAttributes($value, $table);
+                $tableRows = $this->addThemeAttributes($value, $tableRows);
             } else {
-                $table->addRow(['  <comment>- </comment>'.$key, $value]);
+                $tableRows[] = [
+                    $key,
+                    $value,
+                ];
             }
         }
 
-        return $table;
+        return $tableRows;
     }
 }

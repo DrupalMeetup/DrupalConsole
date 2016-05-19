@@ -9,62 +9,68 @@ namespace Drupal\Console\Command;
 
 use Drupal\Console\Style\DrupalStyle;
 
+/**
+ * Class FormTrait
+ * @package Drupal\Console\Command
+ */
 trait FormTrait
 {
     /**
-     * @param DrupalStyle $output
+     * @param DrupalStyle $io
      *
      * @return mixed
      */
-    public function formQuestion(DrupalStyle $output)
+    public function formQuestion(DrupalStyle $io)
     {
-        if ($output->confirm(
+        if ($io->confirm(
             $this->trans('commands.common.questions.inputs.confirm'),
             true
         )) {
             $input_types = [
-              'color',
-              'checkbox',
-              'checkboxes',
-              'date',
-              'datetime',
-              'fieldset',
-              'email',
-              'number',
-              'password',
-              'password_confirm',
-              'range',
-              'radios',
-              'select',
-              'tel',
-              'textarea',
-              'textfield',
+                'fieldset',
             ];
+
+            $elementInfoManager = $this->getService('plugin.manager.element_info');
+            if (!$elementInfoManager) {
+                return false;
+            }
+
+            foreach ($elementInfoManager->getDefinitions() as $definition) {
+                $type = $definition['id'];
+                $elementInfo = $elementInfoManager->getInfo($type);
+                if (isset($elementInfo['#input']) && $elementInfo['#input']) {
+                    if (!in_array($type, $input_types)) {
+                        $input_types[] = $type;
+                    }
+                }
+            }
+            sort($input_types);
 
             $inputs = [];
             $fieldSets = [];
             while (true) {
-                $input_type = $output->choiceNoList(
+                $input_type = $io->choiceNoList(
                     $this->trans('commands.common.questions.inputs.type'),
                     $input_types,
-                    'textfield'
+                    null,
+                    true
                 );
+
+                if (empty($input_type)) {
+                    break;
+                }
 
                 // Label for input
                 $inputLabelMessage = $input_type == 'fieldset'?$this->trans('commands.common.questions.inputs.title'):$this->trans('commands.common.questions.inputs.label');
-                $input_label = $output->ask(
+                $input_label = $io->ask(
                     $inputLabelMessage,
                     null
                 );
 
-                if (empty($input_label)) {
-                    break;
-                }
-
                 // Machine name
                 $input_machine_name = $this->getStringHelper()->createMachineName($input_label);
 
-                $input_name = $output->ask(
+                $input_name = $io->ask(
                     $this->trans('commands.common.questions.inputs.machine_name'),
                     $input_machine_name
                 );
@@ -75,9 +81,11 @@ trait FormTrait
 
                 $inputFieldSet = '';
                 if ($input_type != 'fieldset' && !empty($fieldSets)) {
-                    $inputFieldSet = $output->choiceNoList(
+                    $inputFieldSet = $io->choiceNoList(
                         $this->trans('commands.common.questions.inputs.fieldset'),
-                        $fieldSets
+                        $fieldSets,
+                        null,
+                        true
                     );
 
                     $inputFieldSet = array_search($inputFieldSet, $fieldSets);
@@ -86,25 +94,27 @@ trait FormTrait
                 $maxlength = null;
                 $size = null;
                 if (in_array($input_type, array('textfield', 'password', 'password_confirm'))) {
-                    $maxlength = $output->ask(
-                        'Maximum amount of characters'
+                    $maxlength = $io->ask(
+                        'Maximum amount of characters',
+                        '64'
                     );
 
-                    $size = $output->ask(
+                    $size = $io->ask(
                         'Width of the textfield (in characters)',
-                        null
+                        '64'
                     );
                 }
 
                 if ($input_type == 'select') {
-                    $size = $output->ask(
-                        'Size of multiselect box (in lines)'
+                    $size = $io->ask(
+                        'Size of multiselect box (in lines)',
+                        '5'
                     );
                 }
 
                 $input_options = '';
                 if (in_array($input_type, array('checkboxes', 'radios', 'select'))) {
-                    $input_options = $output->ask(
+                    $input_options = $io->ask(
                         'Input options separated by comma'
                     );
                 }
@@ -122,20 +132,37 @@ trait FormTrait
                 }
 
                 // Description for input
-                $input_description = $output->ask(
+                $input_description = $io->askEmpty(
                     $this->trans('commands.common.questions.inputs.description')
                 );
 
+                // Default value for input
+                switch ($input_type) {
+                case 'checkboxes':
+                    $question = 'commands.common.questions.inputs.default-value.checkboxes';
+                    break;
+                default:
+                    $question = 'commands.common.questions.inputs.default-value.default-value';
+                    break;
+                }
                 if ($input_type != 'fieldset') {
-                    // Default value for input
-                    $default_value = $output->ask(
-                        $this->trans('commands.common.questions.inputs.default-value')
+                    $default_value = $io->askEmpty(
+                        $this->trans($question)
                     );
+                }
+                if ($input_type == 'checkboxes') {
+                    // Prepare options as an array
+                    if (strlen(trim($default_value))) {
+                        // remove spaces in options and empty options
+                        $default_options = array_filter(array_map('trim', explode(',', $default_value)));
+                        $default_value = $default_options;
+                    }
                 }
 
                 // Weight for input
-                $weight = $output->ask(
-                    $this->trans('commands.common.questions.inputs.weight')
+                $weight = $io->ask(
+                    $this->trans('commands.common.questions.inputs.weight'),
+                    '0'
                 );
 
                 array_push(
@@ -158,6 +185,6 @@ trait FormTrait
             return $inputs;
         }
 
-        return;
+        return null;
     }
 }

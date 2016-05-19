@@ -31,9 +31,14 @@ questions:
 errors:
     module-dependency: 'Dependência do módulo ausente "%s"'
     class-name-empty: 'O nome da classe não pode ser vazio'
+    invalid-file-path: 'You must provide a valid file path'
+    module-exist: 'Module "%s" already exist.'
+    machine-name-duplicated: 'Machine name "%s" is duplicated.'
 status:
     enabled: Habilitado
     disabled: Desabilitado
 messages:
     canceled: 'Gerador cancelado'
     drupal-core: 'Drupal Core'
+    move-phar: 'Accessing console from anywhere on your system'
+    quick-start: 'Download, install and serve Drupal 8'

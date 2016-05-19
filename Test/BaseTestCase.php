@@ -2,10 +2,13 @@
 
 namespace Drupal\Console\Test;
 
-use Symfony\Component\Console\Helper\FormatterHelper;
 use Symfony\Component\Console\Helper\HelperSet;
 use Drupal\Console\Helper\TwigRendererHelper;
 use Drupal\Console\Helper\HelperTrait;
+use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Drupal\Console\Helper\ContainerHelper;
 
 abstract class BaseTestCase extends \PHPUnit_Framework_TestCase
 {
@@ -51,12 +54,6 @@ abstract class BaseTestCase extends \PHPUnit_Framework_TestCase
 
             $translator = $this->getTranslatorHelper();
 
-            $message = $this
-                ->getMockBuilder('Drupal\Console\Helper\MessageHelper')
-                ->disableOriginalConstructor()
-                ->setMethods(['showMessages', 'showMessage'])
-                ->getMock();
-
             $chain = $this
                 ->getMockBuilder('Drupal\Console\Helper\ChainCommandHelper')
                 ->disableOriginalConstructor()
@@ -78,17 +75,21 @@ abstract class BaseTestCase extends \PHPUnit_Framework_TestCase
                 ->method('getModulePath')
                 ->will($this->returnValue($this->dir));
 
+            $consoleRoot = __DIR__.'/../';
+            $container = new ContainerBuilder();
+            $loader = new YamlFileLoader($container, new FileLocator($consoleRoot));
+            $loader->load('services.yml');
+
             $this->helperSet = new HelperSet(
                 [
-                    'formatter' => new FormatterHelper(),
                     'renderer' => new TwigRendererHelper(),
                     'string' => $stringHelper,
                     'validator' => $validator,
                     'translator' => $translator,
                     'site' => $siteHelper,
-                    'message' => $message,
                     'chain' => $chain,
                     'drupal' => $drupal,
+                    'container' => new ContainerHelper($container),
                 ]
             );
         }

@@ -31,9 +31,14 @@ questions:
 errors:
     module-dependency: 'Lipsesc dependințele modulului "%s"'
     class-name-empty: 'Numele Clasei nu poate fi lăsat necompletat'
+    invalid-file-path: 'You must provide a valid file path'
+    module-exist: 'Module "%s" already exist.'
+    machine-name-duplicated: 'Machine name "%s" is duplicated.'
 status:
     enabled: Activat
     disabled: Dezactivat
 messages:
     canceled: 'Fișierele generate au fost anulate'
     drupal-core: 'Nucleu Drupal'
+    move-phar: 'Accessing console from anywhere on your system'
+    quick-start: 'Download, install and serve Drupal 8'

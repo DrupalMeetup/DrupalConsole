@@ -65,20 +65,26 @@ class ModuleCommand extends GeneratorCommand
                 $this->trans('commands.generate.module.options.package')
             )
             ->addOption(
-                'feature',
-                false,
+                'module-file',
+                '',
                 InputOption::VALUE_NONE,
-                $this->trans('commands.generate.module.options.feature')
+                $this->trans('commands.generate.module.options.module-file')
+            )
+            ->addOption(
+                'features-bundle',
+                '',
+                InputOption::VALUE_REQUIRED,
+                $this->trans('commands.generate.module.options.features-bundle')
             )
             ->addOption(
                 'composer',
-                false,
+                '',
                 InputOption::VALUE_NONE,
                 $this->trans('commands.generate.module.options.composer')
             )
             ->addOption(
                 'dependencies',
-                false,
+                '',
                 InputOption::VALUE_OPTIONAL,
                 $this->trans('commands.generate.module.options.dependencies')
             );
@@ -89,13 +95,13 @@ class ModuleCommand extends GeneratorCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
+        $yes = $input->hasOption('yes')?$input->getOption('yes'):false;
 
         $validators = $this->getValidator();
-        $messageHelper = $this->getMessageHelper();
 
         // @see use Drupal\Console\Command\ConfirmationTrait::confirmGeneration
-        if (!$this->confirmGeneration($output)) {
+        if (!$this->confirmGeneration($io, $yes)) {
             return;
         }
 
@@ -110,17 +116,17 @@ class ModuleCommand extends GeneratorCommand
         $description = $input->getOption('description');
         $core = $input->getOption('core');
         $package = $input->getOption('package');
-        $feature = $input->getOption('feature');
+        $moduleFile = $input->getOption('module-file');
+        $featuresBundle = $input->getOption('features-bundle');
         $composer = $input->getOption('composer');
-        /*
-         * Modules Dependencies
-         */
+
+         // Modules Dependencies, re-factor and share with other commands
         $dependencies = $validators->validateModuleDependencies($input->getOption('dependencies'));
         // Check if all module dependencies are available
         if ($dependencies) {
             $checked_dependencies = $this->checkDependencies($dependencies['success']);
             if (!empty($checked_dependencies['no_modules'])) {
-                $messageHelper->addWarningMessage(
+                $io->warning(
                     sprintf(
                         $this->trans('commands.generate.module.warnings.module-unavailable'),
                         implode(', ', $checked_dependencies['no_modules'])
@@ -138,12 +144,12 @@ class ModuleCommand extends GeneratorCommand
             $description,
             $core,
             $package,
-            $feature,
+            $moduleFile,
+            $featuresBundle,
             $composer,
             $dependencies
         );
     }
-
 
     /**
      * @param  array $dependencies
@@ -151,6 +157,7 @@ class ModuleCommand extends GeneratorCommand
      */
     private function checkDependencies(array $dependencies)
     {
+        $this->getDrupalHelper()->loadLegacyFile('/core/modules/system/system.module');
         $client = $this->getHttpClient();
         $localModules = array();
 
@@ -187,7 +194,7 @@ class ModuleCommand extends GeneratorCommand
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         $stringUtils = $this->getStringHelper();
         $validators = $this->getValidator();
@@ -199,21 +206,21 @@ class ModuleCommand extends GeneratorCommand
                   $input->getOption('module')
               ) : null;
         } catch (\Exception $error) {
-            $output->error($error->getMessage());
+            $io->error($error->getMessage());
 
             return;
         }
 
         if (!$module) {
-            $module = $output->ask(
+            $module = $io->ask(
                 $this->trans('commands.generate.module.questions.module'),
                 null,
                 function ($module) use ($validators) {
                     return $validators->validateModuleName($module);
                 }
             );
+            $input->setOption('module', $module);
         }
-        $input->setOption('module', $module);
 
         try {
             $machineName = $input->getOption('machine-name') ?
@@ -221,11 +228,11 @@ class ModuleCommand extends GeneratorCommand
                   $input->getOption('machine-name')
               ) : null;
         } catch (\Exception $error) {
-            $output->error($error->getMessage());
+            $io->error($error->getMessage());
         }
 
         if (!$machineName) {
-            $machineName = $output->ask(
+            $machineName = $io->ask(
                 $this->trans('commands.generate.module.questions.machine-name'),
                 $stringUtils->createMachineName($module),
                 function ($machine_name) use ($validators) {
@@ -238,7 +245,7 @@ class ModuleCommand extends GeneratorCommand
         $modulePath = $input->getOption('module-path');
         if (!$modulePath) {
             $drupalRoot = $drupal->getRoot();
-            $modulePath = $output->ask(
+            $modulePath = $io->ask(
                 $this->trans('commands.generate.module.questions.module-path'),
                 '/modules/custom',
                 function ($modulePath) use ($drupalRoot, $machineName) {
@@ -261,7 +268,7 @@ class ModuleCommand extends GeneratorCommand
 
         $description = $input->getOption('description');
         if (!$description) {
-            $description = $output->ask(
+            $description = $io->ask(
                 $this->trans('commands.generate.module.questions.description'),
                 'My Awesome Module'
             );
@@ -270,53 +277,80 @@ class ModuleCommand extends GeneratorCommand
 
         $package = $input->getOption('package');
         if (!$package) {
-            $package = $output->ask(
+            $package = $io->ask(
                 $this->trans('commands.generate.module.questions.package'),
-                'Other'
+                'Custom'
             );
         }
         $input->setOption('package', $package);
 
         $core = $input->getOption('core');
         if (!$core) {
-            $core = $output->ask(
+            $core = $io->ask(
                 $this->trans('commands.generate.module.questions.core'), '8.x',
-                '8.x'
-            );
-        }
-        $input->setOption('core', $core);
+                function ($core) {
+                    // Only allow 8.x and higher as core version.
+                    if (!preg_match('/^([0-9]+)\.x$/', $core, $matches) || ($matches[1] < 8)) {
+                        throw new \InvalidArgumentException(
+                            sprintf(
+                                $this->trans('commands.generate.module.errors.invalid-core'),
+                                $core
+                            )
+                        );
+                    }
 
-        $feature = $input->getOption('feature');
-        if (!$feature) {
-            $feature = $output->confirm(
-                $this->trans('commands.generate.module.questions.feature'),
+                    return $core;
+                }
+            );
+            $input->setOption('core', $core);
+        }
+
+        $moduleFile = $input->getOption('module-file');
+        if (!$moduleFile) {
+            $moduleFile = $io->confirm(
+                $this->trans('commands.generate.module.questions.module-file'),
+                true
+            );
+            $input->setOption('module-file', $moduleFile);
+        }
+
+        $featuresBundle = $input->getOption('features-bundle');
+        if (!$featuresBundle) {
+            $featuresSupport = $io->confirm(
+                $this->trans('commands.generate.module.questions.features-support'),
                 false
             );
+            if ($featuresSupport) {
+                $featuresBundle = $io->ask(
+                    $this->trans('commands.generate.module.questions.features-bundle'),
+                    'default'
+                );
+            }
+            $input->setOption('features-bundle', $featuresBundle);
         }
-        $input->setOption('feature', $feature);
 
         $composer = $input->getOption('composer');
         if (!$composer) {
-            $composer = $output->confirm(
+            $composer = $io->confirm(
                 $this->trans('commands.generate.module.questions.composer'),
                 true
             );
+            $input->setOption('composer', $composer);
         }
-        $input->setOption('composer', $composer);
 
         $dependencies = $input->getOption('dependencies');
         if (!$dependencies) {
-            $addDependencies = $output->confirm(
+            $addDependencies = $io->confirm(
                 $this->trans('commands.generate.module.questions.dependencies'),
                 false
             );
             if ($addDependencies) {
-                $dependencies = $output->ask(
+                $dependencies = $io->ask(
                     $this->trans('commands.generate.module.options.dependencies')
                 );
             }
+            $input->setOption('dependencies', $dependencies);
         }
-        $input->setOption('dependencies', $dependencies);
     }
 
     /**

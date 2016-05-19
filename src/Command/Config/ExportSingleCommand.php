@@ -17,9 +17,21 @@ use Drupal\Console\Command\ContainerAwareCommand;
 
 class ExportSingleCommand extends ContainerAwareCommand
 {
+    /**
+     * @var \Drupal\Core\Entity\EntityManager
+     */
     protected $entityManager;
+
+    /**
+     * @var []
+     */
     protected $definitions;
+
+    /**
+     * @var \Drupal\Core\Config\StorageInterface
+     */
     protected $configStorage;
+
     /**
      * {@inheritdoc}
      */
@@ -38,6 +50,12 @@ class ExportSingleCommand extends ContainerAwareCommand
                 '',
                 InputOption::VALUE_OPTIONAL,
                 $this->trans('commands.config.export.arguments.directory')
+            )
+            ->addOption(
+                'include-dependencies',
+                '',
+                InputOption::VALUE_NONE,
+                $this->trans('commands.config.export.single.options.include-dependencies')
             );
     }
 
@@ -46,9 +64,9 @@ class ExportSingleCommand extends ContainerAwareCommand
      */
     protected function getConfigTypes()
     {
-        $this->entityManager = $this->getEntityManager();
+        $this->entityManager = $this->getService('entity_type.manager');
 
-        foreach ($this->entityManager->getDefinitions() as $entity_type => $definition) {
+        foreach ($this->entityManager->getService('entity_type.manager') as $entity_type => $definition) {
             if ($definition->isSubclassOf('Drupal\Core\Config\Entity\ConfigEntityInterface')) {
                 $this->definitions[$entity_type] = $definition;
             }
@@ -112,20 +130,20 @@ class ExportSingleCommand extends ContainerAwareCommand
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $output = new DrupalStyle($input, $output);
+        $io = new DrupalStyle($input, $output);
 
         $config_types = $this->getConfigTypes();
 
         $config_name = $input->getArgument('config-name');
         if (!$config_name) {
-            $config_type = $output->choiceNoList(
+            $config_type = $io->choiceNoList(
                 $this->trans('commands.config.export.single.questions.config-type'),
                 array_keys($config_types),
                 $this->trans('commands.config.export.single.options.simple-configuration')
             );
             $config_names = $this->getConfigNames($config_type);
 
-            $config_name = $output->choiceNoList(
+            $config_name = $io->choiceNoList(
                 $this->trans('commands.config.export.single.questions.config-name'),
                 array_keys($config_names)
             );
@@ -145,6 +163,8 @@ class ExportSingleCommand extends ContainerAwareCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $io = new DrupalStyle($input, $output);
+
         $directory = $input->getOption('directory');
 
         if (!$directory) {
@@ -157,19 +177,59 @@ class ExportSingleCommand extends ContainerAwareCommand
 
         $configName = $input->getArgument('config-name');
 
-        $configExportFile = $directory . '/' . $configName.'.yml';
-
-        file_unmanaged_delete($configExportFile);
-
-        $config = $this->getConfigFactory()->getEditable($configName);
-
-        if ($config) {
-            $yaml = Yaml::encode($config->getRawData());
-            // Save release file
-            file_put_contents($configExportFile, $yaml);
-            $output->writeln('[+] <info>'.sprintf($this->trans('commands.config.export.single.messages.export'), $configExportFile).'</info>');
-        } else {
-            $output->writeln('[+] <error>'.$this->trans('commands.config.export.single.messages.config-not-found').'</error>');
+        $configNames = [$configName];
+        if ($input->getOption('include-dependencies')) {
+            $configNames += $this->getConfigDependencies($configName);
         }
+        foreach ($configNames as $configName) {
+            $config = $this->getConfigFactory()->getEditable($configName);
+
+            $configExportFile = $directory . '/' . $configName.'.yml';
+
+            file_unmanaged_delete($configExportFile);
+
+            if ($config) {
+                $yaml = Yaml::encode($config->getRawData());
+                // Save configuration file.
+                file_put_contents($configExportFile, $yaml);
+                $io->info(
+                    sprintf($this->trans('commands.config.export.single.messages.export'), $configExportFile)
+                );
+            } else {
+                $io->error($this->trans('commands.config.export.single.messages.config-not-found'));
+            }
+        }
+    }
+
+    /**
+     * Returns all configuration depedencies for a configuration item.
+     *
+     * @param string $configName
+     *   The name of the configuration item to get dependencies for.
+     *
+     * @return array
+     *   An array of dependent configuration item names.
+     */
+    protected function getConfigDependencies($configName)
+    {
+        $dependencyManager = $this->getConfigManager()->getConfigDependencyManager();
+        // Compute dependent config.
+        $dependent_list = $dependencyManager->getDependentEntities('config', $configName);
+        $dependents = [];
+        foreach ($dependent_list as $config_name => $item) {
+            if (!isset($dependents[$config_name])) {
+                $dependents[$config_name] = $config_name;
+            }
+            // Grab any dependent graph paths.
+            if (isset($item['reverse_paths'])) {
+                foreach ($item['reverse_paths'] as $dependent_name => $value) {
+                    if ($value && !isset($dependents[$dependent_name])) {
+                        $dependents[$dependent_name] = $dependent_name;
+                    }
+                }
+            }
+        }
+
+        return $dependents;
     }
 }

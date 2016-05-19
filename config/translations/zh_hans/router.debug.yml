@@ -1,9 +1,11 @@
-description: 显示当前程序的路线
+description: 显示路由
 arguments:
-    route-name: 路线名
+    route-name: 路由名称
 messages:
-    name: 路线名
+    name: 路由名称
+    class: 类路径
+    route: 路由
     path: 类路径
-    pattern: 模式
-    defaults: 缺省值
+    defaults: 默认
     options: 选项
+    pattern: 模式

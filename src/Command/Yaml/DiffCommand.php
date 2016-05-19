@@ -12,7 +12,6 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Parser;
-use Symfony\Component\Console\Helper\Table;
 use Drupal\Console\Command\Command;
 use Drupal\Console\Style\DrupalStyle;
 
@@ -61,8 +60,9 @@ class DiffCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $io = new DrupalStyle($input, $output);
+
         $yaml = new Parser();
-        $message = $this->getMessageHelper();
 
         $yaml_left = $input->getArgument('yaml-left');
         $yaml_right = $input->getArgument('yaml-right');
@@ -81,95 +81,88 @@ class DiffCommand extends Command
         }
 
         try {
-            $yaml_left_parsed = $yaml->parse(file_get_contents($yaml_left));
+            $yamlLeftParsed = $yaml->parse(file_get_contents($yaml_left));
 
-            if (empty($yaml_left_parsed)) {
-                $output->writeln(
-                    '[+] <info>'.sprintf(
+            if (empty($yamlLeftParsed)) {
+                $io->error(
+                    sprintf(
                         $this->trans('commands.yaml.merge.messages.wrong-parse'),
                         $yaml_left
-                    ).'</info>'
+                    )
                 );
             }
 
-            $yaml_right_parsed = $yaml->parse(file_get_contents($yaml_right));
+            $yamlRightParsed = $yaml->parse(file_get_contents($yaml_right));
 
-            if (empty($yaml_right_parsed)) {
-                $output->writeln(
-                    '[+] <info>'.sprintf(
+            if (empty($yamlRightParsed)) {
+                $io->error(
+                    sprintf(
                         $this->trans('commands.yaml.merge.messages.wrong-parse'),
                         $yaml_right
-                    ).'</info>'
+                    )
                 );
             }
         } catch (\Exception $e) {
-            $output->writeln('[+] <error>'.$this->trans('commands.yaml.merge.messages.error-parsing').': '.$e->getMessage().'</error>');
+            $io->error($this->trans('commands.yaml.merge.messages.error-parsing').': '.$e->getMessage());
 
             return;
         }
 
-        $nested_array = $this->getNestedArrayHelper();
+        $nestedArray = $this->getNestedArrayHelper();
 
-        $statisticts = ['total' => 0, 'equal'=> 0 , 'diff' => 0];
-        $diff = $nested_array->arrayDiff($yaml_left_parsed, $yaml_right_parsed, $negate, $statisticts);
-
-
-        $table = new Table($output);
-        $table->setStyle('compact');
+        $statistics = ['total' => 0, 'equal'=> 0 , 'diff' => 0];
+        $diff = $nestedArray->arrayDiff($yamlLeftParsed, $yamlRightParsed, $negate, $statistics);
 
         if ($stats) {
-            $message->addInfoMessage(
+            $io->info(
                 sprintf(
                     $this->trans('commands.yaml.diff.messages.total'),
-                    $statisticts['total']
+                    $statistics['total']
                 )
             );
 
-            $message->addInfoMessage(
+            $io->info(
                 sprintf(
                     $this->trans('commands.yaml.diff.messages.diff'),
-                    $statisticts['diff']
+                    $statistics['diff']
                 )
             );
 
-            $message->addInfoMessage(
+            $io->info(
                 sprintf(
                     $this->trans('commands.yaml.diff.messages.equal'),
-                    $statisticts['equal']
+                    $statistics['equal']
                 )
             );
 
             return;
         }
         // FLAT YAML file to display full yaml to be used with command yaml:update:key or yaml:update:value
-        $diff_flatten = array();
-        $key_flatten = '';
-        $nested_array->yamlFlattenArray($diff, $diff_flatten, $key_flatten);
+        $diffFlatten = array();
+        $keyFlatten = '';
+        $nestedArray->yamlFlattenArray($diff, $diffFlatten, $keyFlatten);
 
         if ($limit !== null) {
             if (!$offset) {
                 $offset = 0;
             }
-            $diff_flatten = array_slice($diff_flatten, $offset, $limit);
+            $diff_flatten = array_slice($diffFlatten, $offset, $limit);
         }
 
-        $table->setHeaders(
-            [
-                $this->trans('commands.yaml.diff.messages.key'),
-                $this->trans('commands.yaml.diff.messages.value'),
-            ]
-        );
+        $tableHeader = [
+            $this->trans('commands.yaml.diff.messages.key'),
+            $this->trans('commands.yaml.diff.messages.value'),
+        ];
 
-        foreach ($diff_flatten as $yaml_key => $yaml_value) {
-            $table->addRow(
-                [
-                    $yaml_key,
-                    $yaml_value
-                ]
-            );
+        $tableRows = [];
+        foreach ($diff_flatten as $yamlKey => $yamlValue) {
+            $tableRows[] = [
+                $yamlKey,
+                $yamlValue
+            ];
         }
 
-        $table->render();
+        $io->table($tableHeader, $tableRows, 'compact');
     }
 
     /**
@@ -177,35 +170,51 @@ class DiffCommand extends Command
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $validator_filename = function ($value) {
-            if (!strlen(trim($value))) {
-                throw new \Exception(' You must provide a valid file path.');
+        $io = new DrupalStyle($input, $output);
+
+        $validator_filename = function ($value) use ($io) {
+            if (!strlen(trim($value)) || !is_file($value)) {
+                $io->error($this->trans('commands.common.errors.invalid-file-path'));
+
+                return false;
             }
 
             return $value;
         };
 
-        $output = new DrupalStyle($input, $output);
-
         // --yaml-left option
         $yaml_left = $input->getArgument('yaml-left');
         if (!$yaml_left) {
-            $yaml_left = $output->ask(
-                $this->trans('commands.yaml.diff.questions.yaml-left'),
-                null,
-                $validator_filename
-            );
+            while (true) {
+                $yaml_left = $output->ask(
+                    $this->trans('commands.yaml.diff.questions.yaml-left'),
+                    null,
+                    $validator_filename
+                );
+
+                if ($yaml_left) {
+                    break;
+                }
+            }
+
             $input->setArgument('yaml-left', $yaml_left);
         }
 
         // --yaml-right option
         $yaml_right = $input->getArgument('yaml-right');
         if (!$yaml_right) {
-            $yaml_right = $output->ask(
-                $this->trans('commands.yaml.diff.questions.yaml-right'),
-                null,
-                $validator_filename
-            );
+            while (true) {
+                $yaml_right = $output->ask(
+                    $this->trans('commands.yaml.diff.questions.yaml-right'),
+                    null,
+                    $validator_filename
+                );
+
+                if ($yaml_right) {
+                    break;
+                }
+            }
+
             $input->setArgument('yaml-right', $yaml_right);
         }
     }

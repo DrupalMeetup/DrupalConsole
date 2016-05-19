@@ -17,6 +17,7 @@ use Drupal\Core\Database\Database;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Yaml\Parser;
+use Composer\Autoload\ClassLoader;
 
 /**
  * Class DrupalHelper
@@ -28,10 +29,12 @@ class DrupalHelper extends Helper
 
     const DEFAULT_SETTINGS_PHP = 'sites/default/settings.php';
 
+    const DRUPAL_INDEX = 'index.php';
+
     /**
      * @var string
      */
-    private $root = false;
+    private $root = null;
 
     /**
      * @var string
@@ -41,12 +44,12 @@ class DrupalHelper extends Helper
     /**
      * @var bool
      */
-    private $installed = false;
+    private $validInstance = false;
 
     /**
      * @var bool
      */
-    private $validInstance = false;
+    private $installed = false;
 
     /**
      * @param  string $root
@@ -64,8 +67,9 @@ class DrupalHelper extends Helper
         }
 
         $autoLoad = sprintf('%s/%s', $root, self::DRUPAL_AUTOLOAD);
+        $index = sprintf('%s/%s', $root, self::DRUPAL_INDEX);
 
-        if (file_exists($autoLoad)) {
+        if (file_exists($autoLoad) && file_exists($index)) {
             $this->root = $root;
             $this->autoLoad = $autoLoad;
             $this->validInstance = true;
@@ -80,19 +84,21 @@ class DrupalHelper extends Helper
     }
 
     /**
-     * @return void
+     * @return bool
      */
-    private function checkConnectionInfo()
+    public function isConnectionInfo()
     {
         $settingsPath = sprintf('%s/%s', $this->root, self::DEFAULT_SETTINGS_PHP);
 
         if (!file_exists($settingsPath)) {
-            return;
+            return false;
         }
 
         if (Database::getConnectionInfo()) {
-            $this->installed = true;
+            return true;
         }
+
+        return false;
     }
 
     /**
@@ -108,10 +114,15 @@ class DrupalHelper extends Helper
      */
     public function isInstalled()
     {
-        if (!$this->installed) {
-            $this->checkConnectionInfo();
-        }
         return $this->installed;
+    }
+
+    /**
+     * @param bool $installed
+     */
+    public function setInstalled($installed)
+    {
+        $this->installed = $installed;
     }
 
     /**
@@ -131,7 +142,7 @@ class DrupalHelper extends Helper
     }
 
     /**
-     * @return string
+     * @return Classloader
      */
     public function getAutoLoadClass()
     {
@@ -252,15 +263,16 @@ class DrupalHelper extends Helper
      */
     public function getProfiles()
     {
-        $yamlParser = new Parser();
+        $yamlParser = $this->getContainerHelper()->get('parser');
+        $finder = $finder = new Finder();
 
-        $finder = new Finder();
         $finder->files()
             ->name('*.info.yml')
-            ->in($this->root . '/core/profiles/*/')
+            ->in($this->root . '/core/profiles/')
+            ->in($this->root . '/profiles/')
             ->contains('type: profile')
             ->notContains('hidden: true')
-            ->depth('== 0');
+            ->depth('1');
 
         $profiles = [];
         foreach ($finder as $file) {
