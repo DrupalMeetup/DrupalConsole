@@ -1,17 +1,17 @@
-description: 'List available translation updates'
+description: 'Listar atualizações disponíveis para tradução'
 arguments:
-    language: 'Language for instance es or Spanish'
+    language: 'Idioma por exemplo es para Espanhol'
 messages:
-    no-languages: 'No translatable languages available. Add a language first.'
-    up-to-date: 'All translations up to date.'
-    no-translations: 'No translation status available. Check manually'
-    project: Project
-    version: Version
-    local-age: 'Local age'
-    remote-age: 'Remote age'
-    info: Information
-    no-translation-files: 'No translation files are provided for development releases.'
-    file-not-found: 'File not found at %s nor at %s'
-    local-file-not-found: 'File not found at %s'
-    translation-not-determined: 'Translation file location could not be determined.'
-    translation-project-updated: Updated
+    no-languages: 'Nenhum idioma traduzível disponível. Adicione o idioma primeiro.'
+    up-to-date: 'Todas as traduções atualizadas.'
+    no-translations: 'Nenhum tradução disponível. Verifique manualmente'
+    project: 'Projeto'
+    version: 'Versão'
+    local-age: 'Idade local'
+    remote-age: 'Idade remota'
+    info: 'Informação'
+    no-translation-files: 'Nenhum arquivo de tradução são disponibilizados para versão em desenvolvimento.'
+    file-not-found: 'Arquivo não encontrado em %s ou em %s'
+    local-file-not-found: 'Arquivo não encontrado em %s'
+    translation-not-determined: 'Localização do arquivo de tradução não pôde ser determinada.'
+    translation-project-updated: 'Atualizada'
